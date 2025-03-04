@@ -1,0 +1,302 @@
+---
+title: "Arianna Final"
+format:
+  html:
+    toc: true
+    toc-location: left
+    self-contained: true
+jupyter: python3
+---
+## Introduction
+
+The analysis aims to explore the competition results from the Coolangatta Gold 2024 event, I scraped results from the Multisport Australia website. The focus is on understanding the contribution of different race segments to the overall performance (Gun Time) and identifying which segments are most influential in determining the final rankings. The study involves scraping the race data, converting time values into numerical format, calculating correlations, and visualizing the impact of various segments on race outcomes.
+
+## Results
+
+Data Extraction and Cleaning the dataset was successfully scraped from the website, and missing values were handled appropriately. Time columns were converted into seconds to facilitate quantitative analysis.
+
+1. Correlation Analysis
+
+The correlation matrix revealed that while the Ski segment dominated the overall time (contributing approximately 64% on average), it exhibited a lower correlation with Gun Time.
+
+Run 1, Swim, Board, and Run 2 showed higher correlations with Gun Time, suggesting that variations in these segments play a larger role in determining race outcomes.
+
+2. Transition Impact
+
+Transition times (T1, T2, T3, T4) had varying levels of correlation with overall Gun Time.
+
+The findings suggest that smoother transitions could provide a competitive edge, although their overall impact was less significant than the main race segments.
+
+3. Segment Contribution Analysis
+
+The analysis demonstrated that although the Ski segment consumed most of the race time, smaller segments with greater variance (e.g., Swim, Board, Run 2) were more influential in differentiating athlete performance.
+
+4. Performance Group Analysis
+
+Athletes were grouped into quartiles based on their Gun Time.
+
+5. Differences between top and bottom quartile athletes were analyzed, showing that faster competitors tended to perform significantly better in the smaller segments rather than the Ski segment.
+
+6. Boxplots illustrated the distributions of segment times for top and bottom performers, reinforcing the importance of non-dominant segments in race performance.
+
+
+
+
+```{python}
+import requests
+import pandas as pd
+from bs4 import BeautifulSoup
+
+base_url = "https://www.multisportaustralia.com.au/races/coolangatta-gold-2024/events/1"
+
+pages = [1, 2]
+
+all_rows = []
+headers = None
+
+for page in pages:
+   
+    url = f"{base_url}?page={page}"
+    print(f"Scraping: {url}")
+    
+    
+    response = requests.get(url)
+    response.raise_for_status()  
+    html_content = response.content
+    
+    soup = BeautifulSoup(html_content, 'html.parser')
+    
+    table = soup.find("table")
+    if table is None:
+        raise Exception(f"Could not locate the results table on {url}. Check the page structure.")
+    
+    if headers is None:
+        headers = [th.get_text(strip=True) for th in table.find_all("th")]
+      
+    for tr in table.find_all("tr")[1:]:
+        cells = [td.get_text(strip=True) for td in tr.find_all("td")]
+        if cells:
+            all_rows.append(cells)
+
+df_athletes = pd.DataFrame(all_rows, columns=headers)
+print(f"Extracted {len(df_athletes)} results")
+print(df_athletes.head())
+
+```
+
+```{python}
+import numpy as np
+
+def time_to_seconds(time_str):
+    try:
+        h, m, s = map(int, time_str.split(':'))
+        return h * 3600 + m * 60 + s
+    except ValueError:
+        return np.nan  
+
+time_columns = ['Gun Time', 'Ski', 'T1', 'Run 1', 'T2', 'Swim', 'T3', 'Board', 'T4', 'Run 2']
+for col in time_columns:
+    df_athletes[col] = df_athletes[col].apply(time_to_seconds)
+
+df_athletes.dropna(subset=time_columns, inplace=True)
+
+```
+
+```{python}
+correlation_matrix = df_athletes[time_columns].corr()
+
+correlations_with_gun_time = correlation_matrix['Gun Time'].drop('Gun Time')
+
+print(correlations_with_gun_time)
+```
+
+```{python}
+import matplotlib.pyplot as plt
+
+#Sort the correlations for a cleaner graph
+sorted_corr = correlations_with_gun_time.sort_values()
+
+plt.figure(figsize=(10, 6))
+sorted_corr.plot(kind='bar', color='skyblue')
+plt.title("Variable Importance: Correlation with 'Gun Time'")
+plt.xlabel("Time Variables")
+plt.ylabel("Correlation with 'Gun Time'")
+plt.tight_layout()
+plt.show()
+
+```
+
+```{python}
+# Define transition columns
+transition_columns = ['T1', 'T2', 'T3', 'T4']
+
+# Compute correlations of transitions with overall Gun Time
+transition_importance = df_athletes[transition_columns].corrwith(df_athletes['Gun Time']).abs()
+
+# Print correlation results
+print("Transition Impact Based on Correlation with 'Gun Time':")
+print(transition_importance)
+
+
+import matplotlib.pyplot as plt
+
+# Plot transition importance
+plt.figure(figsize=(8, 5))
+transition_importance.sort_values().plot(kind='barh', color='coral')
+plt.title("Transition Importance Based on Correlation with 'Gun Time'")
+plt.xlabel("Absolute Correlation with 'Gun Time'")
+plt.ylabel("Transition Segment")
+plt.tight_layout()
+plt.show()
+
+```
+
+
+
+ ```{python}
+ import matplotlib.pyplot as plt
+
+
+segment_columns = ['Ski', 'Run 1', 'Swim', 'Board', 'Run 2']
+
+
+for seg in segment_columns:
+    df_athletes[f'{seg} %'] = df_athletes[seg] / df_athletes['Gun Time'] * 100
+
+
+percent_cols = [f'{seg} %' for seg in segment_columns]
+
+
+print("Segment Contribution Statistics (in % of Gun Time):")
+print(df_athletes[percent_cols].describe())
+
+
+avg_contributions = df_athletes[percent_cols].mean()
+std_contributions = df_athletes[percent_cols].std()
+
+
+print("\nAverage Segment Contributions with Standard Deviations:")
+for seg in segment_columns:
+    avg = avg_contributions[f'{seg} %']
+    std = std_contributions[f'{seg} %']
+    print(f"{seg}: {avg:.2f}% ± {std:.2f}%")
+
+
+plt.figure(figsize=(10, 6))
+plt.bar(segment_columns, avg_contributions, yerr=std_contributions, capsize=5, color='skyblue')
+plt.title("Segment Contribution Analysis\n(Average % of Overall 'Gun Time')")
+plt.xlabel("Race Segment")
+plt.ylabel("Contribution (%)")
+plt.tight_layout()
+plt.show()
+
+ ```
+
+ The Ski segment dominates the total time (64% on average). This means that all competitors spend a lot of time here, and the variation between them is less impactful on the total race outcome. Essentially: If all athletes are similarly fast (or slow) in Ski, then differences in the smaller segments become more influential. Since everyone spends a lot of time on Ski, relative differences are smaller, leading to a lower correlation with winning. Correlation is affected by variance. If the Ski times are all relatively close together, the correlation with overall time will be low even if Ski is the largest contributor to the total time.
+
+
+Why Do Other Segments Show Higher Correlation?
+Run 1, Swim, Board, and Run 2 show more variation relative to their average contribution. This implies: Faster athletes are likely to show greater differentiation in these segments, making them better predictors of overall performance.These segments have higher relative importance because differences here more strongly influence the overall ranking.
+
+It is important to consider environemental facotors when it comes to certain segments. For example, the paddle can be influenced by currents, waves, and other factors that are not presented as heavily cdin the other segments. This can lead to a higher variance in paddle times compared to other segments, making it a more important factor in determining. It came really be out of your control when a set is coming. For example, you might be in the very back of the race, but with the right time and right wave, you can catch up to the front of the pack and even surpace them. 
+
+```{python}
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Sort correlations for better readability
+sorted_corr = correlations_with_gun_time.sort_values()
+
+# Set up the figure
+fig, ax = plt.subplots(figsize=(10, 6))
+
+# Use color intensity to indicate correlation strength
+colors = plt.cm.Blues(sorted_corr.abs())  # Stronger correlations get darker shades
+
+# Create a horizontal bar chart
+ax.barh(sorted_corr.index, sorted_corr, color=colors)
+
+# Add a title and labels
+ax.set_title("Impact of Race Segments on Overall Time", fontsize=14, fontweight="bold")
+ax.set_xlabel("Correlation with 'Gun Time'", fontsize=12)
+ax.set_ylabel("Race Segments", fontsize=12)
+
+# Add a grid for better readability
+ax.grid(axis="x", linestyle="--", alpha=0.6)
+
+# Display the plot
+plt.tight_layout()
+plt.show()
+
+```
+
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+df_sorted = df_athletes.sort_values(by='Gun Time')
+
+
+df_sorted['Performance_Group'] = pd.qcut(df_sorted['Gun Time'], q=4, labels=['Top', 'Upper-Middle', 'Lower-Middle', 'Bottom'])
+
+
+segment_columns = ['Ski', 'Run 1', 'Swim', 'Board', 'Run 2']
+
+
+group_means = df_sorted.groupby('Performance_Group')[segment_columns].mean()
+print("Average Segment Times by Performance Group:")
+print(group_means)
+
+diffs = group_means.loc['Bottom'] - group_means.loc['Top']
+print("\nDifferences (Bottom - Top) in Segment Times (in seconds):")
+print(diffs)
+
+
+plt.figure(figsize=(8, 5))
+plt.bar(diffs.index, diffs.values, color='coral', edgecolor='black')
+plt.title("Difference in Segment Times (Bottom vs. Top Performers)")
+plt.xlabel("Race Segment")
+plt.ylabel("Time Difference (seconds)")
+plt.tight_layout()
+plt.show()
+
+
+top_group = df_sorted[df_sorted['Performance_Group'] == 'Top']
+bottom_group = df_sorted[df_sorted['Performance_Group'] == 'Bottom']
+
+for seg in segment_columns:
+    data_to_plot = [top_group[seg].values, bottom_group[seg].values]
+    plt.figure(figsize=(6, 4))
+    plt.boxplot(data_to_plot, labels=['Top', 'Bottom'], patch_artist=True,
+                boxprops=dict(facecolor='lightblue', color='blue'),
+                medianprops=dict(color='red'))
+    plt.title(f"{seg} Times: Top vs. Bottom Performers")
+    plt.xlabel("Performance Group")
+    plt.ylabel("Time (seconds)")
+    plt.tight_layout()
+    plt.show()
+
+```
+
+
+
+## Discussion
+
+The findings provide important insights into competitive race dynamics:
+
+The Ski Segment as a Baseline: Since all athletes spend a significant amount of time in this segment, it is not a strong differentiator for overall performance. While it is crucial for maintaining a competitive position, winning moves are more likely to occur in smaller, high-variance segments.
+
+Higher Correlation in Smaller Segments: Run 1, Swim, Board, and Run 2 show greater differentiation among athletes, making them more predictive of final rankings. This suggests that optimizing performance in these segments can be more impactful than minor improvements in the Ski segment.
+
+Impact of Transitions: While transitions do play a role, they are not as influential as the main race segments in determining race outcomes.
+
+Performance Quartile Analysis: The biggest time differences between top and bottom performers were observed in the non-dominant segments, highlighting the importance of refining techniques in these areas to achieve competitive advantages.
+
+## Conclusion
+
+This analysis underscores the importance of focusing on segments with higher variance when strategizing for better race performance. While the Ski segment forms the foundation of the race, optimizations in Run 1, Swim, Board, and Run 2 are more likely to yield significant performance improvements. Future training and competitive strategies should emphasize these smaller, yet more impactful, segments for athletes aiming to improve their rankings.
+
+It has been very interesting to conduct an analysis on something that I am very passionate about. I have been a competitive paddleboarder for 4 years and have competed along the east coast. It is interesting to see the data and how it can be used to improve performance. I would love to one day go to Austrialia and watch the Coolangatta Gold in person.

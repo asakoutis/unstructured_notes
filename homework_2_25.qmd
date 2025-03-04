@@ -1,0 +1,434 @@
+---
+title: "Homework 2"
+author: "Arianna Sakoutis"
+format:
+  html:
+    toc: true
+    toc-location: left
+    self-contained: true
+jupyter: python3
+---
+
+## Task 1
+
+We are going to return to the table of the top 100 wrestlers: https://www.cagematch.net/?id=2&view=statistics. Specifically, you are going to get the ratings/comments tables for each wrestler.
+
+
+The following output shows all comments:
+
+This script scrapes wrestling data from Cagematch.net, extracting wrestler names, IDs, match reviews, and ratings. It first retrieves the top wrestlers' statistics page, parses the HTML to find valid profile links, and extracts wrestler details using regex. Then, it iterates through each wrestler’s match page, scrapes user comments, extracts ratings (enclosed in brackets), and cleans the text. The data is stored in a structured Pandas DataFrame. To avoid overwhelming the server, the script introduces random delays between requests. Finally, all collected match comments and ratings are combined into a single dataset for further analysis.
+
+
+```{python}
+import requests 
+import pandas as pd
+from bs4 import BeautifulSoup
+import re
+import time
+import numpy as np
+
+
+url = "https://www.cagematch.net/"
+
+
+best_wrestlers_url = "https://www.cagematch.net/?id=2&view=statistics"
+
+
+response = requests.get(best_wrestlers_url)
+
+best_soup = BeautifulSoup(response.content, "html.parser")
+
+
+best_wrestler_link = best_soup.select("table a[href]")
+
+
+only_links_I_want = [link for link in best_wrestler_link if link['href'].count('&') == 2]
+
+
+list_of_wrestlers = [] 
+
+
+for link in only_links_I_want:
+    name = link.text.strip() 
+    href = link['href'] 
+
+    
+    id_of_wrestler = re.search(r'nr=(\d+)', href).group(1) 
+
+    list_of_wrestlers.append({
+        "Name": name,
+        "ID": id_of_wrestler
+    })
+
+
+df_wrestlers = pd.DataFrame(list_of_wrestlers)
+
+
+the_matches_data = []
+
+for _, row in df_wrestlers.iterrows(): 
+    id_of_wrestler = row["ID"]
+    wrestler_name = row["Name"]
+
+    match_url = f"https://www.cagematch.net/?id=2&nr={id_of_wrestler}&page=99" 
+
+    match_response = requests.get(match_url)
+    match_soup = BeautifulSoup(match_response.content, "html.parser")
+
+
+    comments_section = match_soup.select(".CommentContents")
+    comments_data = [comment.get_text() for comment in comments_section]
+
+
+    comment_data_frame = pd.DataFrame({"comments":comments_data})
+
+    comment_data_frame['rating'] = comment_data_frame['comments'].str.extract(r"\[(.*?)\]")
+    comment_data_frame["comments"] = comment_data_frame["comments"].str.replace(r"\[(.*?)\]", '', regex=True)
+    
+    the_matches_data.append(comment_data_frame)
+
+    time.sleep(np.random.uniform(0, .5, 1)[0])  
+
+comment_data_frame = pd.concat(the_matches_data)
+print(comment_data_frame)
+
+```
+
+
+I wanted to try another way where instead of dropping german comments, I took only the English ones. 
+
+
+```{python}
+
+from langdetect import detect, DetectorFactory
+import pandas as pd
+import re
+
+DetectorFactory.seed = 0 
+
+def is_english(text):
+    try:
+        return detect(text) == "en"
+    except:
+        return False 
+
+comment_data_frame["Is_English"] = comment_data_frame["comments"].apply(is_english)
+
+comment_data_frame = comment_data_frame[comment_data_frame["Is_English"] == True].drop(columns=["Is_English"])
+
+print(comment_data_frame) 
+
+```
+
+
+
+
+Removing German comments so that only english comments remain: 
+
+```{python}
+from langdetect import detect
+import requests 
+import pandas as pd
+from bs4 import BeautifulSoup
+import re
+import time
+import numpy as np
+
+
+base_url = "https://www.cagematch.net/"
+
+
+top_wrestlers_url = "https://www.cagematch.net/?id=2&view=statistics"
+
+
+response = requests.get(top_wrestlers_url)
+soup = BeautifulSoup(response.content, "html.parser")
+
+
+wrestler_links = soup.select("table a[href]")
+
+
+valid_links = [link for link in wrestler_links if link['href'].count('&') == 2]
+
+
+wrestlers_list = [] 
+
+
+for link in valid_links:
+    name = link.text.strip() 
+    href = link['href'] 
+
+    
+    wrestler_id = re.search(r'nr=(\d+)', href).group(1) 
+
+    wrestlers_list.append({
+        "Name": name,
+        "ID": wrestler_id
+    })
+
+
+df_wrestlers = pd.DataFrame(wrestlers_list)
+
+
+match_data = []
+
+for _, row in df_wrestlers.iterrows(): 
+    wrestler_id = row["ID"]
+    wrestler_name = row["Name"]
+
+    match_url = f"https://www.cagematch.net/?id=2&nr={wrestler_id}&page=99" 
+    match_response = requests.get(match_url)
+    match_soup = BeautifulSoup(match_response.content, "html.parser")
+
+
+    comments_section = match_soup.select(".CommentContents")
+    comments_data = [comment.get_text() for comment in comments_section]
+
+
+    comments_df = pd.DataFrame({"comments":comments_data})
+
+    comments_df['rating'] = comments_df['comments'].str.extract(r"\[(.*?)\]")
+    comments_df["comments"] = comments_df["comments"].str.replace(r"\[(.*?)\]", '', regex=True)
+
+    def filter_german(text):
+        try:
+            language = detect(text)
+            return language != 'de'  # Keep if not German
+        except:
+            return False  # Drop if detection fails
+
+    comments_df = comments_df[comments_df['comments'].apply(filter_german)]
+
+    match_data.append(comments_df)
+
+    time.sleep(np.random.uniform(0, .5, 1)[0])
+
+df_match_stats = pd.concat(match_data)
+print(df_match_stats)
+
+```
+
+This scrapes wrestling match reviews from Cagematch.net, extracting wrestler names, IDs, and user comments. It first retrieves the top wrestlers' statistics page, identifies valid profile links, and extracts wrestler details using regex. Then, it iterates through each wrestler’s match page to collect user comments and ratings, cleaning the text by removing ratings enclosed in brackets. Additionally, it filters out German-language comments using the langdetect library. The cleaned data is stored in a Pandas DataFrame, ensuring only relevant English comments remain. To prevent server overload, the script introduces random delays between requests before compiling all match data into a structured dataset.
+
+
+
+## Task 2
+
+Perform any form of sentiment analysis. What is the relationship between a reviewer's sentiment and their rating?
+
+```{python}
+import matplotlib.pyplot as plt
+
+import vaderSentiment
+
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+vader = SentimentIntensityAnalyzer()
+
+
+df_match_stats['sentiment'] = df_match_stats['comments'].apply(lambda x: vader.polarity_scores(x)['compound'])
+
+# Define a function to safely convert values to float, returning NaN for invalid conversions
+def safe_float(val):
+    try:
+        return float(val)
+    except:
+        return np.nan
+# Convert the 'rating' column to numeric values using the safe_float function
+df_match_stats['rating_numeric'] = df_match_stats['rating'].apply(safe_float)
+
+# Drop rows where either 'rating_numeric' or 'sentiment' is NaN to ensure valid data
+df_clean = df_match_stats.dropna(subset=['rating_numeric', 'sentiment'])
+
+# Create a scatter plot to visualize the relationship between sentiment and rating
+correlation = df_clean['sentiment'].corr(df_clean['rating_numeric'])
+print("Correlation between sentiment and rating:", correlation)
+
+
+plt.figure(figsize=(8,6))
+plt.scatter(df_clean['sentiment'], df_clean['rating_numeric'], alpha=0.5)
+plt.title("Relationship between Review Sentiment and Rating")
+plt.xlabel("Sentiment (compound score)")
+plt.ylabel("Rating")
+plt.grid(True)
+plt.show()
+
+
+```
+
+Correlation (Weak Positive Relationship)
+
+Correlation Value: The computed correlation between sentiment and rating is 0.2837. This suggests a weak positive correlation between sentiment and rating. A higher sentiment score (more positive) is slightly associated with higher ratings, but the relationship is not strong.
+
+
+
+## Task 3
+
+Perform any type of topic modeling on the comments. What are the main topics of the comments? How can you use those topics to understand what people value?
+
+
+```{python}
+from bertopic import BERTopic
+import pandas as pd
+from joblib import dump, load
+```
+
+```{python}
+comments = df_match_stats['comments'].astype(str).tolist()
+topic_model = BERTopic()
+topics, probs = topic_model.fit_transform(comments) 
+```
+
+```{python}
+dump([topic_model, topics, probs],"/Users/ariannasakoutis/Desktop/unstructured_notes/wrestler_topic_model.joblib")
+
+topic_model.get_topic_info()
+
+
+```
+
+Main Topics:
+
+CM Punk – Topic 0: This topic likely contains discussions around CM Punk, mentioning his impact, controversy, and overall influence in wrestling.
+Wrestlers' Greatest Moments – Topic 1: Discussions surrounding legendary wrestlers and their most iconic moments.
+Punk, CM, WWE, AEW – Topic 2: More detailed conversations about CM Punk in the context of WWE and AEW.
+Undertaker's Gimmick & Character – Topic 3: Fans discussing The Undertaker's character, gimmick, and legacy.
+Chris Jericho – Topic 4: Conversations about Chris Jericho, his influence, and career.
+Classic wrestlers and styles, such as Lou Thesz (Topic 143), Bret Hart (Topic 144), and AJ Styles (Topic 145).
+Discussions about wrestling matches – likely including specific events or match types (Topic 141).
+Aging wrestlers such as Kassius Ohno (Topic 146).
+
+
+
+How these topics help in understanding what people value:
+
+By analyzing which topics dominate discussions, we gain a window into wrestling fans' values—legacy, skill, character, great matches, and nostalgia. Promotions, wrestlers, and analysts can use this data to create content that resonates most with audiences.
+
+Wrestling fans value legacy, storytelling, nostalgia, era-defining moments, and championship prestige. Discussions about legends like CM Punk, The Undertaker, and Steve Austin highlight an appreciation for iconic careers and lasting influence. Character work, gimmicks, and compelling storytelling are crucial, as seen in conversations about The Undertaker and Shawn Michaels. Nostalgia for classic wrestling and the Attitude Era reflects a deep love for history, technical excellence, and iconic eras. Additionally, fans emphasize the importance of championship prestige, viewing titles as symbols of credibility and success.
+
+
+
+```{python}
+
+pip install pandas numpy matplotlib seaborn scikit-learn
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from sklearn.ensemble import RandomForestClassifier
+
+# Load Datasets
+ekg = pd.read_csv('ekg_data.csv')
+blood = pd.read_csv('bloodwork_data.csv')
+xray = pd.read_csv('xray_data.csv')
+
+# Train and Test Model for Each Dataset
+def evaluate_model(data, label_column):
+    X = data.drop(columns=[label_column])
+    y = data[label_column]
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+    
+    model = RandomForestClassifier(random_state=42)
+    model.fit(X_train, y_train)
+    predictions = model.predict(X_test)
+    accuracy = accuracy_score(y_test, predictions)
+    return accuracy
+
+# Compare Results
+ekg_accuracy = evaluate_model(ekg, 'heart_attack')
+blood_accuracy = evaluate_model(blood, 'heart_attack')
+xray_accuracy = evaluate_model(xray, 'heart_attack')
+
+# Display Results
+print(f"EKG Accuracy: {ekg_accuracy:.2f}")
+print(f"Blood Work Accuracy: {blood_accuracy:.2f}")
+print(f"Chest X-ray Accuracy: {xray_accuracy:.2f}")
+
+
+```
+
+
+
+
+```{python}
+import matplotlib.pyplot as plt
+
+tests = ['EKG', 'Blood Work', 'Chest X-ray']
+accuracies = [ekg_accuracy, blood_accuracy, xray_accuracy]
+
+plt.figure(figsize=(7,5))
+plt.bar(tests, accuracies, color=['blue', 'green', 'orange'])
+plt.ylabel('Accuracy')
+plt.title('Heart Attack Detection Accuracy by Test Type')
+plt.grid(True)
+plt.show()
+
+```
+
+
+
+```{python}
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+
+# Define the URL to scrape statistics data from
+link = "https://www.worldsurfleague.com/athletes/tour/wct?year=2025"
+
+# Send a GET request to the URL and store the response in 'page'
+page = requests.get(link)
+
+# Parse the HTML content of the fetched page using BeautifulSoup with Python's built-in HTML parser
+parser = BeautifulSoup(page.content, "html.parser")
+
+# Example: Extract Athlete Names and Bios (Adjust selectors based on HTML structure)
+athletes = parser.find_all('div', class_='athlete-name')  # Adjust this based on actual class names
+bios = parser.find_all('div', class_='athlete-bio')      # Adjust this based on actual class names
+
+# Store data in a list of dictionaries
+data = []
+for name, bio in zip(athletes, bios):
+    data.append({'name': name.text.strip(), 'bio': bio.text.strip()})
+
+# Convert to DataFrame
+df = pd.DataFrame(data)
+print(df.head())
+
+
+
+```
+
+```{python}
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+import matplotlib.pyplot as plt
+
+# Initialize VADER sentiment analyzer
+analyzer = SentimentIntensityAnalyzer()
+
+# Analyze sentiment
+df['sentiment'] = df['bio'].apply(lambda x: analyzer.polarity_scores(x)['compound'])
+df['sentiment_label'] = df['sentiment'].apply(lambda x: 'positive' if x > 0 else ('negative' if x < 0 else 'neutral'))
+
+# Display results
+print(df[['name', 'bio', 'sentiment', 'sentiment_label']])
+
+# Plot sentiment distribution
+plt.figure(figsize=(8, 5))
+df['sentiment_label'].value_counts().plot(kind='bar')
+plt.title('Sentiment Distribution of Athlete Bios')
+plt.xlabel('Sentiment')
+plt.ylabel('Number of Athletes')
+plt.grid(True)
+plt.show()
+
+```
+
+
+
+
+
+```{python}
+
+
+
+```

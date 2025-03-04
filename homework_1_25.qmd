@@ -1,0 +1,551 @@
+---
+title: "Homework 1"
+author: "Arinanna Sakoutis"
+format:
+  html:
+    toc: true
+    toc-location: left
+    self-contained: true
+jupyter: python3
+---
+
+Professional wrestling, while not everyone's cup of tea, is big business. What started as a carnival act has turned into a global entertainment industry. Netflix recently started showing Monday Night Raw, a program from the biggest North American wrestling company, WWE -- this deal is reportedly worth \$5 billion. Like any large entity, WWE is not without competition, drama, and scandal. 
+
+## General Tips
+
+This is very much a step-by-step process. Don't go crazy trying to get everything done with as few lines as possible. Read the documentation for the AlphaVantage api! Carefully explore the pages from cagematch. There isn't a need to get too fancy with anything here -- just go with simple function and all should be good. Don't print comments, but use normal text for explanations.
+
+## Step 1
+
+In the `calls` folder, you'll find 4 text files -- these are transcripts from quarterly earnings calls. Read those files in (glob.glob will be very helpful here), with appropriate column names for ticker, quarter, and year columns; this should be done within a single function. Perform any data cleaning that you find necessary. 
+
+```{python}
+
+import glob as glob 
+import pandas as pd
+
+file_names = glob.glob("/Users/ariannasakoutis/Desktop/unstructured_notes/*.txt")
+
+
+```
+
+'/Users/ariannasakoutis/Desktop/unstructured_notes/wwe_q1_2023.txt'
+
+Here I am just checking to make sure the file names are correct.
+```{python}
+
+file_names[0]
+
+```
+
+Next, I am going to read in the first file to see what it looks like. You'll notice that I will make a data frame for each file and then combine them all into one data frame.
+```{python}
+import re
+
+data_frames = []
+
+for file in file_names:
+  df = pd.read_table(file, header = None)
+  df['Ticker']=re.search('(?<=notes/)[a-z]{3}(?=_)', file).group(0)
+  df['Quarter']=re.search('q[1-4]',file).group(0)
+  df['Year']=re.search('[0-9]{4}', file).group(0)
+  data_frames.append(df)
+  
+
+calls_data = pd.concat(data_frames)
+
+
+```
+
+Making sure the Ticker column is all uppercase. Not super important, but I think it looks better that way.
+
+```{python}
+
+calls_data['Ticker'] = calls_data['Ticker'].str.upper()
+print(calls_data)
+
+```
+
+The data is now clean and in the proper format
+
+## Step 2
+
+Use the AlphaVantage api to get daily stock prices for WWE and related tickers for the last 5 years -- pay attention to your data. You cannot use any AlphaVantage packages (i.e., you can only use requests to grab the data). Tell me about the general trend that you are seeing. I don't care which viz package you use, but plotly is solid and plotnine is good for ggplot2 users.
+
+In these next lines of code, I am going to get the stock prices for WWE and TKO. Following that, I will plot the stock prices for WWE.
+
+```{python}
+import requests
+import pandas as pd
+from plotnine import ggplot, aes, geom_line, labs, theme_minimal
+from IPython.display import display
+
+```
+
+```{python}
+
+# API Key and stock symbols definition
+api_key = "MNM56ZOAR5P2VZ7T"
+stocks = ["WWE", "TKO", "EDR"]
+
+# Initialize an empty DataFrame to store results
+all_stock_data = pd.DataFrame()
+
+# Fetch stock data for each symbol
+for symbol in stocks:
+    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&outputsize=full&apikey={api_key}"
+    response = requests.get(url)
+    data = response.json()
+   
+    # Retrieve time series data
+    time_series = data.get("Time Series (Daily)", {})
+    meta = data.get("Meta Data", {})
+   
+    # Convert to DataFrame and process
+    df = pd.DataFrame.from_dict(time_series, orient="index")
+    df["symbol"] = meta.get("2. Symbol", symbol)
+   
+    # Rename columns and format
+    df.reset_index(inplace=True)
+    df.rename(columns={"index": "date", "4. close": "close"}, inplace=True)
+    df["close"] = pd.to_numeric(df["close"], errors='coerce')
+   
+    # Append to the main DataFrame
+    all_stock_data = pd.concat([all_stock_data, df], ignore_index=True)
+
+# Convert date column to datetime
+all_stock_data["date"] = pd.to_datetime(all_stock_data["date"])
+
+# Filter data for the past five years
+cutoff_date = pd.Timestamp.now() - pd.DateOffset(years=5)
+recent_data = all_stock_data[all_stock_data["date"] > cutoff_date]
+
+# Generate stock price trend plot
+stock_plot = (
+    ggplot(recent_data, aes(x="date", y="close", color="symbol"))
+    + geom_line()
+    + labs(title="WWE, TKO, & EDR Stock Price Over the Last Five Years", x="Date", y="Stock Price")
+)
+
+display(stock_plot)
+
+```
+
+
+
+
+I thought about adding an additional stock to the list of stocks to analyze. I chose Prime drinks because it is the largest deal that WWE has ever struck with a sponsor
+PRME = pull("PRME") Prime Drink is a privately held company and is not publicly traded on the NYSE or any other stock exchange, so did not include it in the analysis.
+
+
+I chose to use plotnine to plot the stock prices for WWE. I think it is a good package to use because it is similar to ggplot2 in R. As you can see in the plot above, the stock prices for WWE have been on a general upward trend over the last 5 years. There are some dips in the stock prices, but overall, the stock prices have been increasing.
+
+## Step 3
+
+Just like every other nerdy hobby, professional wrestling draws dedicated fans. Wrestling fans often go to cagematch.net to leave reviews for matches, shows, and wrestlers. The following link contains the top 100 matches on cagematch: https://www.cagematch.net/?id=111&view=statistics
+
+The following questions are provided along with the asnwers 
+
+* What is the correlation between WON ratings and cagematch ratings?: .31
+
+** Which wrestler has the most matches in the top 100?: Kenny Omega 
+
+*** Which promotion has the most matches in the top 100?: New Japan Pro Wrestling 
+
+**** What is each promotion's average WON rating?: shown in code below with mean WON ratings for each promotion
+
+***** Select any single match and get the comments and ratings for that match into a data frame.: shown in code below
+
+Step 3 part A:
+
+First, I will be scraping the data from the website.
+
+```{python}
+from bs4 import BeautifulSoup
+import requests
+
+# Define the URL to scrape statistics data from
+link = ("https://www.cagematch.net/?id=111&view=statistics")
+
+# Send a GET request to the URL and store the response in 'page'
+page = requests.get(link)
+
+
+parser = BeautifulSoup(page.content, "html.parser")
+
+#Select all table row ('tr') elements from the parsed HTML.
+# The slicing [1:101] is used to skip the header row and select the first 100 data rows.
+matches = parser.select('tr')[1:101]
+
+# Initialize an empty list to store match data dictionaries
+match_df = []
+
+# Loop through each match (each table row) in the selected rows
+for match in matches:
+  cols = match.select('td')
+# Create a dictionary to hold the extracted data for each match
+  match_data = {
+    'rank': cols[0].text.strip(),
+    'date': cols[1].text.strip(),
+    'promotion': cols[2].find('img')['title'].strip(),
+    'match': cols[3].text.strip(),
+    'WON rating': cols[4].text.strip(),
+    'match type': cols[5].text.strip(),
+    'rating': cols[6].text.strip(),
+    'votes': cols[7].text.strip()
+  }
+
+  match_df.append(match_data)
+
+
+final_df = pd.DataFrame(match_df)
+
+print(final_df)
+
+```
+
+Here, I will be converting the WON ratings to a numeric value.
+
+Following that, I will be converting the ratings to a numeric value.
+
+
+```{python}
+
+# Function to convert WON ratings to numeric values
+def convert_won_to_numeric(won_rating):
+    # Remove any non-star characters (e.g., fractions like "1/4")
+    stars = won_rating.replace('1/4', '').replace('1/2', '').replace('3/4', '')
+    # Count the number of stars
+    star_count = len(stars)
+    # Handle fractions (e.g., "****1/4" → 4.25)
+    if '1/4' in won_rating:
+        star_count += 0.25
+    elif '1/2' in won_rating:
+        star_count += 0.5
+    elif '3/4' in won_rating:
+        star_count += 0.75
+    return star_count
+
+```
+
+
+```{python}
+import re
+def convert(won_rating):
+    # Remove surrounding whitespace
+    won_rating = won_rating.strip()
+    # Use regex to capture a series of asterisks and an optional fraction at the end
+    pattern = r"^(\*+)(1/4|1/2|3/4)?$"
+    m = re.match(pattern, won_rating)
+    if m:
+        base = len(m.group(1))
+        fraction = m.group(2)
+        if fraction == '1/4':
+            return base + 0.25
+        elif fraction == '1/2':
+            return base + 0.5
+        elif fraction == '3/4':
+            return base + 0.75
+        else:
+            return base
+    else:
+        # If the pattern doesn't match, return None (or a default value)
+        return None
+```
+
+And next, I will be finding the correlation between the two ratings.
+
+```{python}
+
+final_df['WON Numeric'] = final_df['WON rating'].apply(convert)
+print(final_df[['WON rating', 'WON Numeric']].head())
+correlation = final_df['WON Numeric'].corr(final_df['rating'])
+print(correlation)
+
+```
+
+
+Step 3 part B: Which wrestler has the most matches in the top 100?
+
+```{python}
+#So this goes into the fixture, drops nas, splits them, counts all individual names, counts them and returns the values
+
+# Extract the 'match' column from the dataset, ensuring no missing values.
+most_common_wrestler_top_100 = (
+    final_df['match']
+    .dropna() # Drop any NaN values to avoid errors
+    .str.split(r' vs\. | & ')  # Split match strings on 'vs.' or '&' to get individual wrestler names
+    .explode() # Flatten the list so that each wrestler appears as a separate row
+    .str.strip() # Remove any leading or trailing whitespace from wrestler names
+    .value_counts() # Count occurrences of each wrestler's name
+    .idxmax() # Retrieve the name of the wrestler with the highest count
+)
+
+# Count how many times the most common wrestler appears in the dataset
+match_count_of_wrestlers = final_df['match'].str.contains(most_common_wrestler_top_100).sum()
+# Print the result
+print(f"The wrestler with the most matches in the dataset is: {most_common_wrestler_top_100} with {match_count_of_wrestlers} matches.")
+
+```
+
+
+Step 3 part C: What is the promotion with the most matches in the top 100?
+
+```{python}
+
+from collections import Counter # Import Counter for counting occurrences
+
+# Finding the promotion that appears the most times in the dataset
+most_of_promotion_counts = (
+    final_df['promotion']
+    .value_counts()
+    .idxmax() # Get the promotion with the highest count
+)
+
+
+# Count the number of matches for each promotion
+promotion_counts = final_df['promotion'].str.contains(most_of_promotion_counts).sum()
+
+
+print(f"The promotion with the most matches in the top 100 is: {most_of_promotion_counts} (appearing in {promotion_counts} matches)")
+
+```
+
+
+Step 3 part D: What is each promotion's average WON rating?
+
+```{python}
+# Group by the 'promotion' column and calculate the mean WON rating for each promotion.
+promotion_avg_won = final_df.groupby('promotion')['WON Numeric'].mean()
+
+# Print the average WON rating for each promotion.
+print("Average WON rating by promotion:")
+print(promotion_avg_won)
+
+
+```
+
+Step 3 part E: Select any single match and get the comments and ratings for that match into a data frame.
+
+```{python}
+
+#https://www.cagematch.net/?id=111&view=comments
+
+#https://www.cagematch.net/?id=111&nr=8034&page=99
+
+#https://www.cagematch.net/?id=111&nr=2510&page=99
+
+
+```
+
+The last link above is the link to the match that I will be using to get the comments and ratings for the match. 
+
+Ex comment: "this match is the best thing i have ever seen in my life. i watched it about 3 days ago but im still in shock"
+
+Next, I am going to be turning this into a dataframe.
+
+```{python}
+
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+
+link = ("https://www.cagematch.net/?id=111&nr=2510&page=99")
+
+
+page1 = requests.get(link)
+
+parser1 = BeautifulSoup(page1.content, "html.parser")
+
+
+matches = parser1.select('.Comment')
+
+
+data = []
+# Loop over each element found in the 'matches' list.
+for m_data in matches:
+# Within each comment block, look for a <div> element that has the class 'CommentContents'.
+    comment_el = m_data.find('div', class_='CommentContents')  
+    if comment_el:
+        comment = comment_el.get_text(strip=True)
+
+        match = re.search(r'\[(\d+\.\d+)\]', comment)
+        
+        if match:
+          comment = re.sub(r'\[(\d+\.\d+)\]', '', comment)
+          data.append({'CommentContents': comment, 'Rating': match.group(1)})
+        else: 
+          data.append({'CommentContents': comment, 'Rating': None})
+# If no rating is found in the comment, append the comment with a 'None' value for the rating.
+df = pd.DataFrame(data)
+
+print(df)
+
+
+
+```
+
+In this data frame, I have the comments for the match that I selected. I also have the ratings for the comments. Initially, I did not have a seperate column for the rating, so I used regex to extract the ratings from the comments. I then created a new column for the ratings.
+
+## Step 4
+
+You can't have matches without wrestlers. The following link contains the top 100 wrestlers, according to cagematch: https://www.cagematch.net/?id=2&view=statistics
+
+*** Of the top 100, who has wrestled the most matches?:
+
+***** Of the top 100, which wrestler has the best win/loss?:
+
+Step 4 part A:
+
+```{python}
+import requests
+import re
+import pandas as pd
+from bs4 import BeautifulSoup
+
+def fetch_top_wrestlers():
+    
+    top_wrestler_url = "https://www.cagematch.net/?id=2&view=statistics"
+    response = requests.get(top_wrestler_url)
+    soup = BeautifulSoup(response.content, "html.parser")
+    
+    # Get all <a> tags within table elements
+    wrestler_links = soup.select("table a[href]")
+    
+    # Only keep links with exactly two '&' characters in the href
+    valid_links = [link for link in wrestler_links if link['href'].count('&') == 2]
+    
+    wrestlers_list = []
+    for link in valid_links:
+        name = link.text.strip()
+        href = link['href']
+        # Use regex to extract the wrestler's ID from the href
+        match = re.search(r'nr=(\d+)', href)
+        if match:
+            wrestler_id = match.group(1)
+            wrestlers_list.append({'Name': name, 'ID': wrestler_id})
+    
+    return pd.DataFrame(wrestlers_list)
+
+def fetch_wrestler_stats(df_wrestlers):
+  
+    match_data = []
+    for _, wrestler in df_wrestlers.iterrows():
+        wrestler_id = wrestler["ID"]
+        name = wrestler["Name"]
+        stats_url = f"https://www.cagematch.net/?id=2&nr={wrestler_id}&page=22"
+        stats_response = requests.get(stats_url)
+        stats_soup = BeautifulSoup(stats_response.content, "html.parser")
+        
+        # Locate the statistics box (assumed to be in elements with class 'InformationBoxContents')
+        wrestler_stats = stats_soup.select('.InformationBoxContents')
+        
+        if wrestler_stats and len(wrestler_stats) >= 4:
+            total_matches = wrestler_stats[0].text.strip()
+            total_wins = wrestler_stats[1].text.strip()
+            # The following values are available if needed:
+            # losses = wrestler_stats[2].text.strip()
+            # draws  = wrestler_stats[3].text.strip()
+            
+            match_data.append({
+                "ID": wrestler_id,
+                "Name": name,
+                "Matches": total_matches,
+                "Wins": total_wins
+            })
+    return pd.DataFrame(match_data)
+```
+
+```{python}
+def process_wrestler_stats(df_stats):
+   
+    #Remove any non-digit characters from the 'Matches' column and convert to numbers
+    df_stats['Matches'] = (
+        df_stats['Matches']
+        .astype(str)
+        .str.replace(r'\D', '', regex=True)
+    )
+    df_stats['Matches'] = pd.to_numeric(df_stats['Matches'], errors='coerce')
+    
+    #Determine the maximum number of matches
+    max_matches = df_stats['Matches'].max()
+    print("The most number of matches: ", max_matches)
+    
+    # Extract a numeric wins count from the 'Wins' column
+    df_stats["Wins_count"] = (
+        df_stats["Wins"]
+        .astype(str)
+        .str.extract(r'(\d+)')
+        .astype(int)
+    )
+    
+    #Calculate the win percentage for each wrestler
+    df_stats["Win_Percentage"] = df_stats["Wins_count"] / df_stats["Matches"]
+    
+    #Remove a specific wrestler if desired
+    df_stats = df_stats[df_stats['Name'] != "Gene Okerlund"]
+    
+    #(Re)calculate win percentage if needed after filtering
+    df_stats["Win_Percentage"] = df_stats["Wins_count"] / df_stats["Matches"]
+    
+    #Identify the wrestler with the highest win percentage
+    best_index = df_stats["Win_Percentage"].idxmax()
+    best_wrestler = df_stats.loc[best_index]
+    
+    print("\nBest wrestler by Win Percentage:")
+    print(best_wrestler)
+    
+    return df_stats
+```
+
+
+```{python}
+def main():
+    #Step 1: Fetch the top wrestlers and their IDs
+    df_wrestlers = fetch_top_wrestlers()
+    
+    #Step 2: For each wrestler, fetch the match statistics
+    df_wrestlers_stats = fetch_wrestler_stats(df_wrestlers)
+    print("Wrestler Statistics DataFrame:")
+    print(df_wrestlers_stats)
+    
+    #Step 3: Process the statistics (clean data, compute win percentage, etc.)
+    process_wrestler_stats(df_wrestlers_stats)
+
+if __name__ == "__main__":
+    main()
+
+```
+
+
+
+You'll notice that although Gene Okerlund had the highest win percentages. It is important to consider the fact that he was actaully an american announcer for WWE and only did promotional fights, with that said, the correct wrestler witht the highest win loss ratio is actually Antonio Inoki. 
+
+## Step 5
+
+With all of this work out of the way, we can start getting down to strategy.
+
+
+First, what talent should WWE pursue? Advise carefully.
+
+Recommendation: WWE should pursue athletes that are from Japan considering wrestlers from Japan make up 9/10 for example Tiger Mask would be a great talent to select considering his win rate is #7. But, it is important to consider that atheltes may be dead on the verge of ending their careers.
+
+
+Second, reconcile what you found in steps 3 and 4 with Netflix's relationship with WWE. Use the data from the following page to help make your case: https://wrestlenomics.com/tv-ratings/
+
+The wrestling TV ratings from Wrestlenomics (via wrestlenomics.com/tv-ratings) indicate that viewers—especially those consuming content on streaming platforms like Netflix—are drawn to narratives that combine in-ring excellence with compelling backstories.
+Insight: The high match counts and win percentages tell one part of the story, but today’s audiences also demand context, drama, and behind-the-scenes insights.
+Recommendation: WWE should use the legacy of performers with outstanding statistical records (like the storied careers of its veterans) as a narrative foundation for Netflix specials, documentaries. This not only reinforces WWE’s brand credibility but also appeals to a broader, digitally savvy audience.
+
+
+Netflix’s involvement provides a platform to repackage historical data in a new format. For example, archival footage of legendary wrestlers—highlighting record-setting matches or dramatic win streaks—can be integrated into new programming.
+
+
+By curating content that juxtaposes historical excellence (as seen in your match and win/loss data) with modern, fast-paced storytelling, WWE can attract both nostalgic longtime fans and new viewers who discover wrestling through streaming.
+
+
+Third, do you have any further recommendations for WWE?
+
+My further reccomendations wuld be to consider the image and likenes of the wrestlers. Although performance plays a large role in the success of WWE, the image and likeness of the wrestlers is also important because it can draw in more fans, but for sure continue to incorporate analytics into booking decisions.
+
+

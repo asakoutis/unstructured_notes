@@ -1,0 +1,204 @@
+---
+title: "Unlocking Longevity: Do Blue Zones Hold the Key to Reaching the Oldest Ages?"
+author: "Arianna Sakoutis"
+format:
+  html:
+    toc: true
+    toc-location: left
+    self-contained: true
+    theme: sandstone
+    highlight-style: haddock
+    
+---
+  This analysis examines the geographical distribution of the 200 oldest living people in the world, I will be comparing individuals from Blue Zones—regions renowned for exceptional longevity—with those from non-Blue Zone areas, to uncover potential insights about age. 
+
+  For those who may have never heard of a Blue Zone, it is a term used to describe specific regions of the world where people live significantly longer, healthier lives compared to the global average. These areas have high concentrations of centenarians (people who live to 100 or more) and low rates of chronic diseases like heart disease, diabetes, and cancer.
+
+ **The five identified Blue Zones are:**
+
+1. Okinawa, Japan
+2. Sardinia, Italy
+3. Nicoya Peninsula, Costa Rica
+4. Ikaria, Greece
+5. Loma Linda, California 
+
+ People in these regions share common lifestyle habits, such as plant-based diets, regular physical activity, strong social communities, and a sense of purpose, which is believed to contribute to their long life and well-being.
+
+  My interest in this project stems from my cultural ties to Ikaria, Greece. It is an island in the Aegean Sea known as a Blue Zone. My grandfather was born and raised in Ikaria. Being Greek makes up a large part of who I am, so the opportunity to connect my ethnic roots with data excites me. Coming from a background in athletics and a strong passion for health and wellness has also motivated me to explore the connection between geographic location and longevity.
+
+
+Wanted to plot the world map with Blue Zones highlighted. (This is not related to my data, but we learned about mapping in SQL, so wanted to give it a try)
+
+### Primary Questions
+
+#### Of the 200 oldest living people, does the presence of a blue zone in a country contribute to a higher average age compared to those in countries with out a blue zone?
+
+
+1. What is the relationship between *The oldest 200 living people from a blue zone region* and *The oldest 200 living people not from a blue zone region*?
+
+2. Is there a group difference between *The oldest 200 living people from a blue zone region* on *The oldest 200 living people not from a blue zone region*?
+
+I will be using a variety of methods to answer the questions expressed above with the ultimate goal of answering the primary one. 
+
+## Data
+
+The data that I am using for this project can be accessed from
+[Genrontology Wiki](https://gerontology.fandom.com/wiki/Oldest_living_people) 
+
+Although Greece is not a listed country that anyone on the 200 oldest people in the world list currently resides in, I want to closely examine the data provided. 
+
+Reading in my data:
+```{r}
+
+library(rvest)
+
+oldest_people <- read_html("https://gerontology.fandom.com/wiki/Oldest_living_people") %>% 
+  html_table() %>% 
+  `[[`(1)
+```
+
+
+<br>
+
+
+```{r}
+rmarkdown::paged_table(oldest_people)
+```
+
+  While this data comes in relatively clean, there are a few important variables that I need to create to answer my questions. I'll start with the most important *blue_zones*. To be able to completely capture my idea in Question 1, I need to clearly define what countries in the world have a blue zone region. 
+
+```{r}
+
+blue_zones <- c("JPN", "ITA", "CRI", "GR", "USA")
+
+```
+
+I then created a new column "BlueZone" in the oldest people data frame and defined a blue zone region with yes or no.
+
+```{r}
+
+oldest_people$BlueZone <- ifelse(oldest_people$Country %in% blue_zones, "Yes", "No")
+
+```
+
+  Next, I subset the data based on the condition. This line extracts all the rows from the oldest_people data frame where the BlueZone column has a value of "Yes". It returns all the columns for those rows. I did this to filter the data frame to only include people who are from Blue zones. 
+
+```{r}
+
+oldest_people[oldest_people$BlueZone == "Yes" ,]
+
+```
+  
+  As you can see Birth dates are listed as characters. So, I converted the Birth date column (which contains dates stored in "day-month-year" format) into a proper date format that R recognizes. This is useful because it allows R to treat the values as dates, enabling me to calculate their current age.
+  
+```{r}
+
+oldest_people$`Birth date` <- lubridate::dmy(oldest_people$`Birth date`)
+
+
+```
+
+I then utilized the function Sys.Date to give me the current date today. 
+
+```{r}
+
+today <- Sys.Date()
+
+```
+
+This is the formula I used to calculate the oldest 200 people in worlds current age. 
+
+```{r}
+
+oldest_people$current_age <- (Sys.Date()-oldest_people$`Birth date`)/365
+
+```
+
+Next, I assigned the column a new name.
+
+```{r}
+
+current_age <- oldest_people$current_age
+
+
+```
+
+<br>
+
+## Methods
+
+
+To answer my questions, I used a t-test. This test is effective for this scenario because it provides a rigorous statistical method to test whether the presence of a Blue Zone is associated with a difference in the average age of the oldest living people compared to countries without Blue Zones.
+
+Below, I've listed my Null and Alternative Hypothesis':
+
+***$H_0$  There is no significant difference in the average age of 200 oldest living people in countries with a Blue Zones regions compared to those in countries without a Blue Zone region***
+  
+***$H_a$ There is a significant difference in the average age of the 200 oldest living people in countries with a Blue Zones regions compared to those in countries without a Blue Zone region***
+
+```{r}
+
+t.test(current_age~BlueZone, data = oldest_people)
+
+```
+ 
+## Results
+
+Setting α = 0.05, says that I am willing to accept a 5% chance of incorrectly rejecting the null hypothesis.
+If p-value is less than 0.05, I reject the null hypothesis. As you can see, the p-value is 13.9%, so I fail to reject the null.
+What I mean by this is that there is there is no significant difference in the average age of 200 oldest living people in
+countries with a Blue Zones regions compared to those in countries without a Blue Zone region. So, according to this data, just 
+because you are from a Blue Zone does not mean you are more likely to be on the list of the 200 oldest living people.  
+
+<br>
+
+### Visualizations
+
+I created a box plot to visually express the relationship between the 200 oldest living people from a country with the presence of a blue zone with 200 compared to those from countries with out a blue zone
+
+```{r}
+
+library(ggplot2)
+ggplot(oldest_people, aes(x = BlueZone, y = current_age, fill = BlueZone)) +
+  geom_boxplot() +
+  labs(title = "Age Distribution of the 200 Oldest Living People by Blue Zone",
+       x = "Presence of Blue Zone",
+       y = "Current Age") +
+  theme_minimal() 
+
+
+```
+**Explanation of Box Plot**
+
+  The horizontal line inside each box represents the median age for each group (those from Blue Zones and those not from Blue Zones).The medians are similar/close to each other, this suggests that the average age doesn't differ much between people from Blue Zones and those from non-Blue Zones, implying little to no strong correlation.
+
+  The box itself represents the interquartile range (IQR), which is the range between the first quartile (25th percentile) and the third quartile (75th percentile). The spread of ages is similar between the two groups, which suggests that people from Blue Zones and non-Blue Zones have similar variability in their ages, further indicating no strong relationship between age and Blue Zone status.
+
+  The dots outside the "whiskers" are outliers, representing exceptionally old individuals. Both groups (Blue Zone and non-Blue Zone) have similar outlier patterns, the suggests that extreme ages are not necessarily more common in one group than the other. 
+  
+Overall, there is not a strong relationship between age and Blue Zone status.
+
+<br>
+
+
+To calculate the mean age of the all of the current 200 oldest people in the world, I made an object called `mean_val`:
+
+```{r}
+
+mean_val <- mean(oldest_people$current_age)
+
+```
+
+
+The mean value for the *old_var* is `r mean_val`. 
+
+<br> 
+
+## Discussion
+
+  Through my analysis, I discovered that while Blue Zones may not account for the absolute oldest ages, I know they do promote environments that contribute to healthier, longer lives overall. I think it’s important to understand that null results still provide valuable insights. I find these results particularly interesting because they highlight that other factors—beyond just geographic location—could play a bigger role in achieving extreme old age.
+  <br> 
+  While Blue Zones are often celebrated for their high concentration of centenarians and lower rates of chronic diseases, the lack of a significant statistical relationship between living in a Blue Zone and being among the 200 oldest living people suggests that other factors might be at play. This opens up an exciting opportunity for further exploration to uncover what specific elements contribute to extreme longevity, whether they involve genetics, unique social structures, ect. It reminds us that Blue Zones, while important, are not the only keys to longevity and that we may have just scratched the surface in understanding how to promote a long, healthy life. 
+
+
+

@@ -1,0 +1,134 @@
+---
+title: "Homework #1"
+format:
+  html:
+    toc: true
+    toc-location: left
+    theme: lux
+    highlight-style: breeze
+    self-contained: true
+---
+
+See all that stuff above. You should change `theme` and `highligh-style` to fit your own style. You can find them here: https://quarto.org/docs/output-formats/html-themes.html
+
+Seriously, you should start finding your own style, so definitely change them!
+
+## Data
+
+You'll be working with the following data files:
+
+-   `artist_genre.txt`
+```{r}
+artist_description <- read.table("~/Downloads/artist_genre.txt",TRUE)
+#reading in the data
+#table bc it looks better easier to read i think 
+```
+
+
+-   `artist_name.csv`
+```{r}
+artist_name <- read.csv("~/Downloads/artist_name.csv")
+```
+
+
+-   `artist_net_worth.csv`
+```{r}
+artist_net_worth <- read.csv("~/Downloads/artist_net_worth.csv")
+#rename the cvs data
+artist_net_worth$net_worth_millions <- as.numeric(artist_net_worth$net_worth_millions)
+#used as.numeric because networth is not a factor so you need to turn it into numeric
+# $ means to look inside 
+aggregate(net_worth_millions ~ Artist, artist_net_worth, length)
+#length - takes a vector and tells you how many things are inside n
+artist_net_worth <- aggregate(net_worth_millions ~ Artist, artist_net_worth, FUN = unique)
+
+artist_net_worth <- artist_net_worth[order(artist_net_worth$net_worth_millions, decreasing = TRUE),]
+
+head(artist_net_worth, n=15L)
+
+dups <- duplicated(artist_net_worth$Artist)
+#rename duplicate 
+artist_net_worth <- artist_net_worth[dups==FALSE,]
+#== means to ask a question or tell it to do something 
+#false is the ones that are not duplicate
+
+
+#show me the tail or the ones with the most net worth
+#comma after the parenthesis for rows then columns but you want to look inside the columns first 
+```
+
+
+-   `artist_number_one_hits.csv`
+```{r}
+artist_number_one_hits <- read.csv("~/Downloads/artist_number_one_hits.csv")
+head(sort(artist_number_one_hits$number_one_hits, decreasing = TRUE))
+dups <- duplicated(artist_number_one_hits$artist)
+artist_number_one_hits <- artist_number_one_hits [dups == FALSE,]
+order(artist_number_one_hits$number_one_hits)
+tail(artist_number_one_hits[order(artist_number_one_hits$number_one_hits),], n=15L)
+
+```{r}
+artist_studio_albums <- read.csv("~/Downloads/artist_studio_albums (1).csv")
+```
+
+
+
+```{r}
+artist_studio_albums 
+aggregate(studio_albums ~ Artist, artist_studio_albums, length)
+dups <- duplicated(artist_studio_albums$Artist)
+artist_studio_albums <- artist_studio_albums[dups==FALSE,]
+order(artist_studio_albums$studio_albums)
+tail(artist_studio_albums[order(artist_studio_albums$studio_albums),])
+```
+
+-   `artist_top_hits.csv`
+
+```{r}
+artist_top_hits <- read.csv("~/Downloads/artist_top_hits.csv")
+```
+
+
+The only file that you are going to need to be careful about is the `artist_genre` file -- be sure to look at the extension, refer to the notes on I/O, and read the help file!
+
+## Goals
+
+Read the files in and then accomplish the following goals:
+
+### Pre-join Goals
+
+* Use the aggregate function to ensure that each file only contains unique rows.
+
+```{r}
+artist_name
+aggregate(Birth_Year ~ Artist, artist_name, length)
+dups <- duplicated(artist_name$Artist)
+artist_name <- artist_name[dups==FALSE,]
+order(artist_name$Birth_Year)
+tail(artist_name[order(artist_name$Birth_Year),])
+```
+
+
+* If duplicates exist, handle them. You can either de-duplicate them (the `duplicate` function is helpful here) or `aggregate` them to single rows. The choice is yours and yours alone, but be sure to justify your decision.
+
+* Which 5 artists have the greatest net worth?
+
+
+
+* Which 15 artists have the most number 1 hits?
+
+
+* Which 10 artists have the fewest studio albums?
+
+
+After you have those done, you can join your data frames together.
+
+### Post-join Goals
+
+* Create variables to capture the following ideas:
+    + How long has the artist been around? You can just use their birth year.
+    + Something to capture each artist's net worth per studio album.
+
+* Plot net worth per studio album, the "been around" variable, and genre. There should be points and colors here. 
+
+For all tasks comment your code and explain what you found!
